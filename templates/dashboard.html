@@ -75,10 +75,12 @@
                         <td>{{ k[0] }}</td>
                         <td>{{ k[1] }}</td>
                         <td>
-                            <form method="POST" action="/edit_owner/{{ k[1] }}" class="d-flex">
-                                <input type="text" name="owner" value="{{ k[4] }}" class="form-control me-2">
-                                <button type="submit" class="btn btn-info btn-sm">💾</button>
-                            </form>
+                          <form method="POST" action="{{ url_for('delete_key', key=k.key) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                    onclick="return confirm('Удалить ключ {{ k.key }}? Это действие необратимо.');">
+                              Удалить
+                            </button>
+                          </form>
                         </td>
                         <td>{{ k[2] }}</td>
                         <td>{{ 'Да' if k[3] else 'Нет' }}</td>
