@@ -72,25 +72,24 @@
                 <tbody>
                     {% for k in keys %}
                     <tr>
-                        <td>{{ k[0] }}</td>
-                        <td>{{ k[1] }}</td>
+                        <td>{{ k.id }}</td>
+                        <td>{{ k.key }}</td>
+                        <td>{{ k.owner }}</td>
+                        <td>{{ k.expires_at|format_datetime }}</td>
+                        <td>{{ 'Да' if k.active else 'Нет' }}</td>
                         <td>
-                          <form method="POST" action="{{ url_for('delete_key', key=k.key) }}" style="display:inline;">
-                            <button type="submit" class="btn btn-danger btn-sm"
-                                    onclick="return confirm('Удалить ключ {{ k.key }}? Это действие необратимо.');">
-                              Удалить
-                            </button>
-                          </form>
-                        </td>
-                        <td>{{ k[2] }}</td>
-                        <td>{{ 'Да' if k[3] else 'Нет' }}</td>
-                        <td>
-                            {% if k[3] %}
-                                <a href="/deactivate/{{ k[1] }}" class="btn btn-warning btn-sm">⛔</a>
+                            {% if k.active %}
+                                <a href="{{ url_for('deactivate_key', key=k.key) }}" class="btn btn-warning btn-sm">⛔</a>
                             {% else %}
-                                <a href="/activate/{{ k[1] }}" class="btn btn-success btn-sm">✅</a>
+                                <a href="{{ url_for('activate_key', key=k.key) }}" class="btn btn-success btn-sm">✅</a>
                             {% endif %}
-                            <a href="/delete/{{ k[1] }}" class="btn btn-danger btn-sm">🗑</a>
+                            <a href="{{ url_for('reset_hwid', key=k.key) }}" class="btn btn-secondary btn-sm">♻ HWID</a>
+                            <form method="POST" action="{{ url_for('delete_key', key=k.key) }}" style="display:inline;">
+                                <button type="submit" class="btn btn-danger btn-sm"
+                                        onclick="return confirm('Удалить ключ {{ k.key }}? Это действие необратимо.');">
+                                    🗑
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}
