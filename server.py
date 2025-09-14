@@ -85,7 +85,7 @@ def generate_key():
             conn.commit()
     return redirect(url_for("dashboard"))
 
-@app.route("/activate/<key>")
+@app.route("/activate/<path:key>")
 def activate_key(key):
     if not require_admin():
         return redirect(url_for("login"))
@@ -95,7 +95,7 @@ def activate_key(key):
             conn.commit()
     return redirect(url_for("dashboard"))
 
-@app.route("/deactivate/<key>")
+@app.route("/deactivate/<path:key>")
 def deactivate_key(key):
     if not require_admin():
         return redirect(url_for("login"))
@@ -105,7 +105,7 @@ def deactivate_key(key):
             conn.commit()
     return redirect(url_for("dashboard"))
 
-@app.route("/delete/<key>")
+@app.route("/delete/<path:key>", methods=["POST"])
 def delete_key(key):
     if not require_admin():
         return redirect(url_for("login"))
@@ -115,7 +115,7 @@ def delete_key(key):
             conn.commit()
     return redirect(url_for("dashboard"))
 
-@app.route("/edit_owner/<key>", methods=["POST"])
+@app.route("/edit_owner/<path:key>", methods=["POST"])
 def edit_owner(key):
     if not require_admin():
         return redirect(url_for("login"))
@@ -126,7 +126,7 @@ def edit_owner(key):
             conn.commit()
     return redirect(url_for("dashboard"))
 
-@app.route("/reset_hwid/<key>")
+@app.route("/reset_hwid/<path:key>")
 def reset_hwid(key):
     if not require_admin():
         return redirect(url_for("login"))
