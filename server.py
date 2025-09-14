@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import random
 import string
+from math import floor
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
@@ -166,12 +167,15 @@ def check_key():
             elif saved_hwid != hwid:
                 return jsonify({"status": "invalid", "reason": "hwid_mismatch"})
 
-            days_left = (expires_at - datetime.now()).days
+            time_left = expires_at - datetime.now()
+            days_left = time_left.days
+            hours_left = floor(time_left.seconds / 3600)
 
             return jsonify({
                 "status": "ok",
                 "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "days_left": days_left
+                "days_left": days_left,
+                "hours_left": hours_left
             })
 
 if __name__ == "__main__":
