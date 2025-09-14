@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime, timedelta
-import sqlite3, uuid
+import sqlite3, uuid, random, string
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"  # замени на свой
+app.secret_key = "supersecretkey"
 
 # --- Инициализация базы ---
 def init_db():
@@ -13,18 +13,23 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT UNIQUE,
             expires_at TEXT,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            owner TEXT DEFAULT ''
         )""")
         conn.commit()
 
 init_db()
 
+# --- Генератор коротких ключей ---
+def generate_short_key(length=12):
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
 # --- Авторизация ---
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        password = request.form.get("password")
-        if password == "12345az":
+        if request.form.get("password") == "12345az":
             session["admin"] = True
             return redirect(url_for("dashboard"))
         else:
@@ -40,26 +45,59 @@ def dashboard():
         keys = conn.execute("SELECT * FROM keys").fetchall()
     return render_template("dashboard.html", keys=keys)
 
-# --- Генерация ключа ---
+# --- Создание ключа ---
 @app.route("/generate", methods=["POST"])
 def generate_key():
     if not session.get("admin"):
         return redirect(url_for("login"))
-    new_key = str(uuid.uuid4())
+    custom_key = request.form.get("custom_key").strip()
+    new_key = custom_key if custom_key else generate_short_key()
     days = int(request.form.get("days", 30))
+    owner = request.form.get("owner", "")
     expires_at = (datetime.now() + timedelta(days=days)).isoformat()
     with sqlite3.connect("database.db") as conn:
-        conn.execute("INSERT INTO keys (key, expires_at) VALUES (?, ?)", (new_key, expires_at))
+        conn.execute("INSERT INTO keys (key, expires_at, owner) VALUES (?, ?, ?)", (new_key, expires_at, owner))
         conn.commit()
     return redirect(url_for("dashboard"))
 
-# --- Удаление ключа ---
+# --- Деактивация ---
+@app.route("/deactivate/<key>")
+def deactivate_key(key):
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("UPDATE keys SET active=0 WHERE key=?", (key,))
+        conn.commit()
+    return redirect(url_for("dashboard"))
+
+# --- Активация ---
+@app.route("/activate/<key>")
+def activate_key(key):
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("UPDATE keys SET active=1 WHERE key=?", (key,))
+        conn.commit()
+    return redirect(url_for("dashboard"))
+
+# --- Полное удаление ---
 @app.route("/delete/<key>")
 def delete_key(key):
     if not session.get("admin"):
         return redirect(url_for("login"))
     with sqlite3.connect("database.db") as conn:
-        conn.execute("UPDATE keys SET active=0 WHERE key=?", (key,))
+        conn.execute("DELETE FROM keys WHERE key=?", (key,))
+        conn.commit()
+    return redirect(url_for("dashboard"))
+
+# --- Редактирование владельца ---
+@app.route("/edit_owner/<key>", methods=["POST"])
+def edit_owner(key):
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    owner = request.form.get("owner", "")
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("UPDATE keys SET owner=? WHERE key=?", (owner, key))
         conn.commit()
     return redirect(url_for("dashboard"))
 
