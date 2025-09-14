@@ -8,7 +8,6 @@ import string
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_conn():
@@ -37,6 +36,12 @@ def generate_short_key(length=12):
 
 def require_admin():
     return session.get("admin")
+
+@app.template_filter("format_datetime")
+def format_datetime(value):
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y %H:%M")
+    return value
 
 @app.route("/", methods=["GET", "POST"])
 def login():
