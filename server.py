@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime, timedelta
-import sqlite3, uuid, random, string
+import sqlite3, random, string
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
