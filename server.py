@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 import sqlite3, uuid
 
 app = Flask(__name__)
-app.secret_key = "supersecret"  # замени на свой ключ
+app.secret_key = "supersecretkey"  # замени на свой
 
-# --- Инициализация БД ---
+# --- Инициализация базы ---
 def init_db():
     with sqlite3.connect("database.db") as conn:
         c = conn.cursor()
@@ -23,11 +23,15 @@ init_db()
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form["username"] == "admin" and request.form["password"] == "1234":
+        password = request.form.get("password")
+        if password == "12345az":
             session["admin"] = True
             return redirect(url_for("dashboard"))
+        else:
+            return render_template("login.html", error="Неверный пароль")
     return render_template("login.html")
 
+# --- Панель ---
 @app.route("/dashboard")
 def dashboard():
     if not session.get("admin"):
@@ -49,7 +53,17 @@ def generate_key():
         conn.commit()
     return redirect(url_for("dashboard"))
 
-# --- API для проверки ключа ---
+# --- Удаление ключа ---
+@app.route("/delete/<key>")
+def delete_key(key):
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("UPDATE keys SET active=0 WHERE key=?", (key,))
+        conn.commit()
+    return redirect(url_for("dashboard"))
+
+# --- API для клиента ---
 @app.route("/check_key", methods=["POST"])
 def check_key():
     data = request.json
@@ -64,15 +78,5 @@ def check_key():
                 return jsonify({"status": "ok"})
     return jsonify({"status": "invalid"})
 
-# --- Удаление ключа ---
-@app.route("/delete/<key>")
-def delete_key(key):
-    if not session.get("admin"):
-        return redirect(url_for("login"))
-    with sqlite3.connect("database.db") as conn:
-        conn.execute("UPDATE keys SET active=0 WHERE key=?", (key,))
-        conn.commit()
-    return redirect(url_for("dashboard"))
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
