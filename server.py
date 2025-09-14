@@ -10,42 +10,6 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-@app.route("/check_key", methods=["POST"])
-def check_key():
-    data = request.json or {}
-    key = (data.get("key") or "").strip().upper()
-    hwid = (data.get("hwid") or "").strip()
-
-    if not key or not hwid:
-        return jsonify({"status": "invalid"})
-
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT expires_at, active, hwid FROM keys WHERE key=%s", (key,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"status": "invalid"})
-
-            expires_at, active, saved_hwid = row["expires_at"], row["active"], row["hwid"]
-
-            if not active or expires_at <= datetime.now():
-                return jsonify({"status": "invalid"})
-
-            if not saved_hwid:
-                cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (hwid, key))
-                conn.commit()
-
-            elif saved_hwid != hwid:
-                return jsonify({"status": "invalid"})
-
-            days_left = (expires_at - datetime.now()).days
-            return jsonify({
-                "status": "ok",
-                "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "days_left": days_left
-            })
-
-
 def get_conn():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
@@ -177,25 +141,38 @@ def check_key():
     data = request.json or {}
     key = (data.get("key") or "").strip().upper()
     hwid = (data.get("hwid") or "").strip()
+
     if not key or not hwid:
-        return jsonify({"status": "invalid"})
+        return jsonify({"status": "invalid", "reason": "missing_data"})
+
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT expires_at, active, hwid FROM keys WHERE key=%s", (key,))
             row = cur.fetchone()
             if not row:
-                return jsonify({"status": "invalid"})
+                return jsonify({"status": "invalid", "reason": "not_found"})
+
             expires_at, active, saved_hwid = row["expires_at"], row["active"], row["hwid"]
-            if not active or expires_at <= datetime.now():
-                return jsonify({"status": "invalid"})
+
+            if not active:
+                return jsonify({"status": "invalid", "reason": "inactive"})
+
+            if expires_at <= datetime.now():
+                return jsonify({"status": "invalid", "reason": "expired"})
+
             if not saved_hwid:
                 cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (hwid, key))
                 conn.commit()
-                return jsonify({"status": "ok"})
-            if saved_hwid == hwid:
-                return jsonify({"status": "ok"})
-            return jsonify({"status": "invalid"})
+            elif saved_hwid != hwid:
+                return jsonify({"status": "invalid", "reason": "hwid_mismatch"})
+
+            days_left = (expires_at - datetime.now()).days
+
+            return jsonify({
+                "status": "ok",
+                "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "days_left": days_left
+            })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
