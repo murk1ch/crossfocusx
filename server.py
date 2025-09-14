@@ -148,12 +148,18 @@ def check_key():
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT expires_at, active, hwid FROM keys WHERE key=%s", (key,))
+            # берём owner, active, expires_at, hwid
+            cur.execute(
+                "SELECT owner, active, expires_at, hwid FROM keys WHERE key=%s", 
+                (key,)
+            )
             row = cur.fetchone()
             if not row:
                 return jsonify({"status": "invalid", "reason": "not_found"})
 
-            expires_at, active, saved_hwid = row["expires_at"], row["active"], row["hwid"]
+            owner, active, expires_at, saved_hwid = (
+                row["owner"], row["active"], row["expires_at"], row["hwid"]
+            )
 
             if not active:
                 return jsonify({"status": "invalid", "reason": "inactive"})
@@ -162,17 +168,25 @@ def check_key():
                 return jsonify({"status": "invalid", "reason": "expired"})
 
             if not saved_hwid:
-                cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (hwid, key))
+                cur.execute(
+                    "UPDATE keys SET hwid=%s WHERE key=%s", 
+                    (hwid, key)
+                )
                 conn.commit()
             elif saved_hwid != hwid:
                 return jsonify({"status": "invalid", "reason": "hwid_mismatch"})
 
-            time_left = expires_at - datetime.now()
-            days_left = time_left.days
-            hours_left = floor(time_left.seconds / 3600)
+            # время до окончания
+            delta = expires_at - datetime.now()
+            days_left = delta.days
+            hours_left = delta.seconds // 3600
 
             return jsonify({
                 "status": "ok",
+                "key": key,
+                "owner": owner,
+                "active": True,
+                "hwid": saved_hwid or hwid,
                 "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "days_left": days_left,
                 "hours_left": hours_left
