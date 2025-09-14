@@ -1,6 +1,10 @@
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+from flask import Flask, render_template
+
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "Сервер работает! 🎯"
 
 app = Flask(__name__)
 
@@ -31,3 +35,4 @@ class License(db.Model):
 # Создание таблиц
 with app.app_context():
     db.create_all()
+
