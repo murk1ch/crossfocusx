@@ -2,6 +2,10 @@ from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
+import uuid
+import platform
+import hashlib
+import requests
 
 app = Flask(__name__)
 
@@ -98,5 +102,39 @@ def revoke_license():
 
     return jsonify({"message": "License revoked", "hwid": data["hwid"]})
 
+# --- Генерация HWID ---
+def get_hwid():
+    raw = f"{platform.node()}-{platform.system()}-{platform.machine()}-{uuid.getnode()}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+# --- Локальный тест клиента ---
+def local_test():
+    api_url = os.environ.get("API_URL", "http://127.0.0.1:5000")
+    hwid = get_hwid()
+    print(f"HWID: {hwid}")
+
+    # Проверка лицензии
+    try:
+        r = requests.post(f"{api_url}/check_license", json={"hwid": hwid}, timeout=5)
+        print("Проверка лицензии:", r.json())
+    except Exception as e:
+        print("Ошибка при проверке:", e)
+
+    # Пример регистрации (только с админ-ключом)
+    # try:
+    #     r = requests.post(
+    #         f"{api_url}/register_license",
+    #         json={"hwid": hwid, "expires_days": 30, "notes": "Тестовая лицензия"},
+    #         headers={"X-Admin-Key": os.environ.get("ADMIN_KEY", "secret123")},
+    #         timeout=5
+    #     )
+    #     print("Регистрация:", r.json())
+    # except Exception as e:
+    #     print("Ошибка при регистрации:", e)
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Если хотим запустить сервер:
+    # app.run(host="0.0.0.0", port=5000)
+
+    # Если хотим протестировать клиента:
+    local_test()
