@@ -1,140 +1,78 @@
-from flask import Flask, request, jsonify, render_template
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime, timedelta
-import os
-import uuid
-import platform
-import hashlib
-import requests
+import sqlite3, uuid
 
 app = Flask(__name__)
+app.secret_key = "supersecret"  # замени на свой ключ
 
-# --- Конфигурация базы ---
-db_url = os.environ.get("DATABASE_URL")
-if db_url:
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///licenses.db'
+# --- Инициализация БД ---
+def init_db():
+    with sqlite3.connect("database.db") as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE,
+            expires_at TEXT,
+            active INTEGER DEFAULT 1
+        )""")
+        conn.commit()
 
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+init_db()
 
-# --- Модель лицензии ---
-class License(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    hwid = db.Column(db.String(128), unique=True, nullable=False)
-    status = db.Column(db.String(20), default='active')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    expires_at = db.Column(db.DateTime, nullable=True)
-    notes = db.Column(db.String(255), nullable=True)
+# --- Авторизация ---
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        if request.form["username"] == "admin" and request.form["password"] == "1234":
+            session["admin"] = True
+            return redirect(url_for("dashboard"))
+    return render_template("login.html")
 
-    def is_valid(self):
-        if self.status != 'active':
-            return False
-        if self.expires_at and datetime.utcnow() > self.expires_at:
-            return False
-        return True
+@app.route("/dashboard")
+def dashboard():
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    with sqlite3.connect("database.db") as conn:
+        keys = conn.execute("SELECT * FROM keys").fetchall()
+    return render_template("dashboard.html", keys=keys)
 
-with app.app_context():
-    db.create_all()
+# --- Генерация ключа ---
+@app.route("/generate", methods=["POST"])
+def generate_key():
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    new_key = str(uuid.uuid4())
+    days = int(request.form.get("days", 30))
+    expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("INSERT INTO keys (key, expires_at) VALUES (?, ?)", (new_key, expires_at))
+        conn.commit()
+    return redirect(url_for("dashboard"))
 
-# --- Главная страница ---
-@app.route("/")
-def index():
-    try:
-        return render_template("test1.html")
-    except:
-        return "Сервер работает! 🎯"
+# --- API для проверки ключа ---
+@app.route("/check_key", methods=["POST"])
+def check_key():
+    data = request.json
+    key = data.get("key")
+    with sqlite3.connect("database.db") as conn:
+        c = conn.cursor()
+        c.execute("SELECT expires_at, active FROM keys WHERE key=?", (key,))
+        row = c.fetchone()
+        if row:
+            expires_at, active = row
+            if active and datetime.fromisoformat(expires_at) > datetime.now():
+                return jsonify({"status": "ok"})
+    return jsonify({"status": "invalid"})
 
-# --- API: проверка лицензии ---
-@app.route("/check_license", methods=["POST"])
-def check_license():
-    data = request.get_json()
-    if not data or "hwid" not in data:
-        return jsonify({"error": "HWID required"}), 400
-
-    lic = License.query.filter_by(hwid=data["hwid"]).first()
-    return jsonify({"valid": bool(lic and lic.is_valid())})
-
-# --- API: регистрация лицензии ---
-@app.route("/register_license", methods=["POST"])
-def register_license():
-    admin_key = os.environ.get("ADMIN_KEY", "secret123")
-    if request.headers.get("X-Admin-Key") != admin_key:
-        return jsonify({"error": "Unauthorized"}), 403
-
-    data = request.get_json()
-    if not data or "hwid" not in data:
-        return jsonify({"error": "HWID required"}), 400
-
-    if License.query.filter_by(hwid=data["hwid"]).first():
-        return jsonify({"error": "License already exists"}), 400
-
-    expires_at = None
-    if "expires_days" in data:
-        expires_at = datetime.utcnow() + timedelta(days=int(data["expires_days"]))
-
-    lic = License(hwid=data["hwid"], expires_at=expires_at, notes=data.get("notes"))
-    db.session.add(lic)
-    db.session.commit()
-
-    return jsonify({"message": "License registered", "hwid": data["hwid"]})
-
-# --- API: отзыв лицензии ---
-@app.route("/revoke_license", methods=["POST"])
-def revoke_license():
-    admin_key = os.environ.get("ADMIN_KEY", "secret123")
-    if request.headers.get("X-Admin-Key") != admin_key:
-        return jsonify({"error": "Unauthorized"}), 403
-
-    data = request.get_json()
-    if not data or "hwid" not in data:
-        return jsonify({"error": "HWID required"}), 400
-
-    lic = License.query.filter_by(hwid=data["hwid"]).first()
-    if not lic:
-        return jsonify({"error": "License not found"}), 404
-
-    lic.status = "revoked"
-    db.session.commit()
-
-    return jsonify({"message": "License revoked", "hwid": data["hwid"]})
-
-# --- Генерация HWID ---
-def get_hwid():
-    raw = f"{platform.node()}-{platform.system()}-{platform.machine()}-{uuid.getnode()}"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-# --- Локальный тест клиента ---
-def local_test():
-    api_url = os.environ.get("API_URL", "http://127.0.0.1:5000")
-    hwid = get_hwid()
-    print(f"HWID: {hwid}")
-
-    # Проверка лицензии
-    try:
-        r = requests.post(f"{api_url}/check_license", json={"hwid": hwid}, timeout=5)
-        print("Проверка лицензии:", r.json())
-    except Exception as e:
-        print("Ошибка при проверке:", e)
-
-    # Пример регистрации (только с админ-ключом)
-    # try:
-    #     r = requests.post(
-    #         f"{api_url}/register_license",
-    #         json={"hwid": hwid, "expires_days": 30, "notes": "Тестовая лицензия"},
-    #         headers={"X-Admin-Key": os.environ.get("ADMIN_KEY", "secret123")},
-    #         timeout=5
-    #     )
-    #     print("Регистрация:", r.json())
-    # except Exception as e:
-    #     print("Ошибка при регистрации:", e)
+# --- Удаление ключа ---
+@app.route("/delete/<key>")
+def delete_key(key):
+    if not session.get("admin"):
+        return redirect(url_for("login"))
+    with sqlite3.connect("database.db") as conn:
+        conn.execute("UPDATE keys SET active=0 WHERE key=?", (key,))
+        conn.commit()
+    return redirect(url_for("dashboard"))
 
 if __name__ == "__main__":
-    # Если хотим запустить сервер:
-    # app.run(host="0.0.0.0", port=5000)
-
-    # Если хотим протестировать клиента:
-    local_test()
+    app.run(debug=True)
