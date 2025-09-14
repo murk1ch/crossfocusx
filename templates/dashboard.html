@@ -1,53 +1,69 @@
-<form method="POST" action="/generate" class="mb-4">
-    <div class="row g-2">
-        <div class="col-auto">
-            <input type="text" name="custom_key" class="form-control" placeholder="Свой ключ (опционально)">
-        </div>
-        <div class="col-auto">
-            <input type="text" name="owner" class="form-control" placeholder="Ник владельца">
-        </div>
-        <div class="col-auto">
-            <input type="number" name="days" class="form-control" placeholder="Дней" value="30">
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-light">Создать</button>
-        </div>
-    </div>
-</form>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Админ панель</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #6a11cb, #2575fc);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">Админ панель</h1>
 
-<table class="table table-dark table-striped mt-3">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Ключ</th>
-            <th>Владелец</th>
-            <th>Действует до</th>
-            <th>Активен</th>
-            <th>Действия</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for k in keys %}
-        <tr>
-            <td>{{ k[0] }}</td>
-            <td>{{ k[1] }}</td>
-            <td>
-                <form method="POST" action="/edit_owner/{{ k[1] }}">
-                    <input type="text" name="owner" value="{{ k[4] }}" class="form-control">
-                    <button type="submit" class="btn btn-sm btn-info mt-1">Сохранить</button>
-                </form>
-            </td>
-            <td>{{ k[2] }}</td>
-            <td>{{ 'Да' if k[3] else 'Нет' }}</td>
-            <td>
-                {% if k[3] %}
-                    <a href="/deactivate/{{ k[1] }}" class="btn btn-warning btn-sm">Деактивировать</a>
-                {% else %}
-                    <a href="/activate/{{ k[1] }}" class="btn btn-success btn-sm">Активировать</a>
-                {% endif %}
-                <a href="/delete/{{ k[1] }}" class="btn btn-danger btn-sm">Удалить</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+        <form method="POST" action="/generate" class="mb-4">
+            <div class="row g-2">
+                <div class="col-auto">
+                    <input type="text" name="custom_key" class="form-control" placeholder="Свой ключ (опционально)">
+                </div>
+                <div class="col-auto">
+                    <input type="text" name="owner" class="form-control" placeholder="Ник владельца">
+                </div>
+                <div class="col-auto">
+                    <input type="number" name="days" class="form-control" placeholder="Дней" value="30">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-light">Создать</button>
+                </div>
+            </div>
+        </form>
+
+        <div class="card p-3">
+            <h4>Список ключей</h4>
+            <table class="table table-dark table-striped mt-3">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ключ</th>
+                        <th>Владелец</th>
+                        <th>Действует до</th>
+                        <th>Активен</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for k in keys %}
+                    <tr>
+                        <td>{{ k[0] }}</td>
+                        <td>{{ k[1] }}</td>
+                        <td>
+                            <form method="POST" action="/edit_owner/{{ k[1] }}">
+                                <input type="text" name="owner" value="{{ k[4] }}" class="form-control">
+                                <button type="submit" class="btn btn-sm btn-info mt-1">Сохранить</button>
+                            </form>
+                        </td>
+                        <td>{{ k[2] }}</td>
+                        <td>{{ 'Да' if k[3] else 'Нет' }}</td>
+                        <td>
+                            {% if k[3] %}
+                                <a href="/deactivate/{{ k[1] }}" class="btn btn-warning btn-sm">
