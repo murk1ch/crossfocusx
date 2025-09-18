@@ -1,6 +1,6 @@
 import os
 import psycopg
-from psycopg.extras import RealDictCursor
+from psycopg.rows import dict_row
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import random
@@ -27,7 +27,7 @@ def check_update():
     })
 
 def get_conn():
-    return psycopg.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
     with get_conn() as conn:
@@ -209,6 +209,7 @@ def check_key():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
