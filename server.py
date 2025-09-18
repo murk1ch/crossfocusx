@@ -1,6 +1,6 @@
 import os
 import psycopg
-from psycopg2.extras import RealDictCursor
+from psycopg.extras import RealDictCursor
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import random
@@ -209,5 +209,6 @@ def check_key():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
