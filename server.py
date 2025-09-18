@@ -11,6 +11,21 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+UPDATE_VERSION = os.getenv("LATEST_VERSION", "1.0.0")
+UPDATE_URL = os.getenv("DOWNLOAD_URL", "")
+UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "")
+UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "")
+
+# Добавьте этот endpoint в server.py
+@app.route("/check_update", methods=["GET"])
+def check_update():
+    return jsonify({
+        "version": UPDATE_VERSION,
+        "url": UPDATE_URL,
+        "sha256": UPDATE_SHA256,
+        "changelog": UPDATE_CHANGELOG
+    })
+
 def get_conn():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
@@ -194,3 +209,4 @@ def check_key():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
