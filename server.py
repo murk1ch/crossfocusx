@@ -32,6 +32,7 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # keys — как у тебя
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS keys (
                     id SERIAL PRIMARY KEY,
@@ -40,6 +41,59 @@ def init_db():
                     active BOOLEAN DEFAULT TRUE,
                     owner TEXT DEFAULT '',
                     hwid TEXT DEFAULT ''
+                )
+            """)
+
+            # creators — контент-мейкеры
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS creators (
+                    id SERIAL PRIMARY KEY,
+                    nickname TEXT UNIQUE NOT NULL,
+                    yt_url TEXT DEFAULT '',
+                    tt_url TEXT DEFAULT '',
+                    ig_url TEXT DEFAULT '',
+                    commission_percent INTEGER DEFAULT 10,
+                    active BOOLEAN DEFAULT TRUE,
+                    note TEXT DEFAULT ''
+                )
+            """)
+
+            # promo_codes — сами промокоды
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS promo_codes (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT UNIQUE NOT NULL,
+                    creator_id INTEGER REFERENCES creators(id) ON DELETE SET NULL,
+                    bonus_days INTEGER DEFAULT 7,
+                    max_uses INTEGER DEFAULT 0,
+                    active BOOLEAN DEFAULT TRUE,
+                    start_at TIMESTAMP DEFAULT NOW(),
+                    end_at TIMESTAMP,
+                    only_new_users BOOLEAN DEFAULT FALSE,
+                    note TEXT DEFAULT ''
+                )
+            """)
+
+            # promo_redemptions — лог применений промокодов
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS promo_redemptions (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    hwid TEXT NOT NULL,
+                    redeemed_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+
+            # purchases — учёт покупок (для комиссий)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS purchases (
+                    id SERIAL PRIMARY KEY,
+                    key TEXT NOT NULL,
+                    amount NUMERIC(10,2) NOT NULL,
+                    code TEXT,
+                    creator_id INTEGER REFERENCES creators(id),
+                    purchased_at TIMESTAMP DEFAULT NOW()
                 )
             """)
             conn.commit()
@@ -207,8 +261,210 @@ def check_key():
                 "hours_left": hours_left
             })
 
+@app.route("/referrals")
+def referrals():
+    if not require_admin():
+        return redirect(url_for("login"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM creators ORDER BY id DESC")
+            creators = cur.fetchall()
+            cur.execute("""
+                SELECT p.*, c.nickname AS creator_nickname
+                FROM promo_codes p
+                LEFT JOIN creators c ON c.id = p.creator_id
+                ORDER BY p.id DESC
+            """)
+            codes = cur.fetchall()
+            cur.execute("""
+                SELECT code, COUNT(*) AS uses
+                FROM promo_redemptions
+                GROUP BY code
+            """)
+            stats = {row["code"]: row["uses"] for row in cur.fetchall()}
+    return render_template("referrals.html", creators=creators, codes=codes, stats=stats)
+
+@app.route("/creator/create", methods=["POST"])
+def creator_create():
+    if not require_admin():
+        return redirect(url_for("login"))
+    nickname = (request.form.get("nickname") or "").strip()
+    yt_url = (request.form.get("yt_url") or "").strip()
+    tt_url = (request.form.get("tt_url") or "").strip()
+    ig_url = (request.form.get("ig_url") or "").strip()
+    commission = int(request.form.get("commission_percent") or 10)
+    note = (request.form.get("note") or "").strip()
+    if not nickname:
+        return redirect(url_for("referrals"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO creators (nickname, yt_url, tt_url, ig_url, commission_percent, note)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (nickname) DO NOTHING
+            """, (nickname, yt_url, tt_url, ig_url, commission, note))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+@app.route("/promo/create", methods=["POST"])
+def promo_create():
+    if not require_admin():
+        return redirect(url_for("login"))
+    code = (request.form.get("code") or "").strip().upper()
+    creator_id = int(request.form.get("creator_id") or 0)
+    bonus_days = int(request.form.get("bonus_days") or 7)
+    max_uses = int(request.form.get("max_uses") or 0)
+    end_at_raw = (request.form.get("end_at") or "").strip()
+    end_at = datetime.strptime(end_at_raw, "%Y-%m-%d %H:%M") if end_at_raw else None
+    only_new = (request.form.get("only_new_users") == "on")
+    note = (request.form.get("note") or "").strip()
+    if not code:
+        return redirect(url_for("referrals"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO promo_codes (code, creator_id, bonus_days, max_uses, active, start_at, end_at, only_new_users, note)
+                VALUES (%s, %s, %s, %s, TRUE, NOW(), %s, %s, %s)
+            """, (code, creator_id or None, bonus_days, max_uses, end_at, only_new, note))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+@app.route("/promo/toggle/<path:code>")
+def promo_toggle(code):
+    if not require_admin():
+        return redirect(url_for("login"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE promo_codes SET active = NOT active WHERE code=%s", (code,))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+@app.route("/promo/delete/<path:code>", methods=["POST"])
+def promo_delete(code):
+    if not require_admin():
+        return redirect(url_for("login"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM promo_codes WHERE code=%s", (code,))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+@app.route("/apply_promo", methods=["POST"])
+def apply_promo():
+    data = request.json or {}
+    code = (data.get("code") or "").strip().upper()
+    key = (data.get("key") or "").strip().upper()
+    hwid = (data.get("hwid") or "").strip()
+    if not code or not key or not hwid:
+        return jsonify({"status": "invalid", "reason": "missing_data"}), 400
+    now = datetime.now()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Проверяем ключ
+            cur.execute("SELECT id, expires_at, active, hwid AS saved_hwid FROM keys WHERE key=%s", (key,))
+            k = cur.fetchone()
+            if not k:
+                return jsonify({"status": "invalid", "reason": "key_not_found"}), 404
+            if not k["active"]:
+                return jsonify({"status": "invalid", "reason": "key_inactive"}), 403
+            if k["expires_at"] <= now:
+                return jsonify({"status": "invalid", "reason": "key_expired"}), 403
+            if k["saved_hwid"] and k["saved_hwid"] != hwid:
+                return jsonify({"status": "invalid", "reason": "hwid_mismatch"}), 403
+            if not k["saved_hwid"]:
+                cur.execute("UPDATE keys SET hwid=%s WHERE id=%s", (hwid, k["id"]))
+
+            # Проверяем промокод
+            cur.execute("""
+                SELECT p.*, c.nickname AS creator_nickname
+                FROM promo_codes p
+                LEFT JOIN creators c ON c.id = p.creator_id
+                WHERE p.code=%s
+            """, (code,))
+            p = cur.fetchone()
+            if not p:
+                return jsonify({"status": "invalid", "reason": "promo_not_found"}), 404
+            if not p["active"]:
+                return jsonify({"status": "invalid", "reason": "promo_inactive"}), 403
+            if p["start_at"] and p["start_at"] > now:
+                return jsonify({"status": "invalid", "reason": "promo_not_started"}), 403
+            if p["end_at"] and p["end_at"] < now:
+                return jsonify({"status": "invalid", "reason": "promo_expired"}), 403
+
+            # Антифрод: один раз на связку key+hwid
+            cur.execute("""
+                SELECT 1 FROM promo_redemptions
+                WHERE code=%s AND key=%s AND hwid=%s
+            """, (code, key, hwid))
+            if cur.fetchone():
+                return jsonify({"status": "invalid", "reason": "already_redeemed"}), 409
+
+            # Лимит применений
+            if p["max_uses"] and p["max_uses"] > 0:
+                cur.execute("SELECT COUNT(*) AS used FROM promo_redemptions WHERE code=%s", (code,))
+                used = cur.fetchone()["used"]
+                if used >= p["max_uses"]:
+                    return jsonify({"status": "invalid", "reason": "promo_limit_reached"}), 409
+
+            # «Только для новых»
+            if p["only_new_users"]:
+                cur.execute("SELECT 1 FROM promo_redemptions WHERE key=%s", (key,))
+                if cur.fetchone():
+                    return jsonify({"status": "invalid", "reason": "not_new_user"}), 403
+
+            # Применяем бонус
+            bonus_days = int(p["bonus_days"] or 7)
+            new_expires = k["expires_at"] + timedelta(days=bonus_days)
+            cur.execute("UPDATE keys SET expires_at=%s WHERE id=%s", (new_expires, k["id"]))
+
+            # Логируем применение
+            cur.execute("""
+                INSERT INTO promo_redemptions (code, key, hwid)
+                VALUES (%s, %s, %s)
+            """, (code, key, hwid))
+            conn.commit()
+
+            delta = new_expires - now
+            return jsonify({
+                "status": "ok",
+                "code": code,
+                "creator": p["creator_nickname"],
+                "bonus_days": bonus_days,
+                "new_expires_at": new_expires.strftime("%Y-%m-%d %H:%M:%S"),
+                "days_left": delta.days,
+                "hours_left": delta.seconds // 3600
+            })
+
+@app.route("/purchase/create", methods=["POST"])
+def purchase_create():
+    if not require_admin():
+        return redirect(url_for("login"))
+    key = (request.form.get("key") or "").strip().upper()
+    amount = float(request.form.get("amount") or 0)
+    code = (request.form.get("code") or "").strip().upper()
+
+    creator_id = None
+    if code:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT creator_id FROM promo_codes WHERE code=%s", (code,))
+                row = cur.fetchone()
+                if row:
+                    creator_id = row["creator_id"]
+            conn.commit()
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO purchases (key, amount, code, creator_id)
+                VALUES (%s, %s, %s, %s)
+            """, (key, amount, code or None, creator_id))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
