@@ -1,1 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Реферальные коды</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: linear-gradient(135deg, #6a11cb, #2575fc); color: white; min-height: 100vh; padding: 20px; }
+    .card { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border-radius: 10px; padding: 20px; }
+    .btn-light { background-color: #fff; color: #6a11cb; font-weight: bold; }
+    .btn-light:hover { background-color: #e0d4ff; }
+    table { color: white; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 class="mb-4">Реферальные коды</h1>
 
+  <!-- Навигация -->
+  <div class="mb-3">
+    <a href="/dashboard" class="btn btn-light btn-sm">Ключи</a>
+    <a href="/referrals" class="btn btn-light btn-sm">Рефералы</a>
+    <a href="/logout" class="btn btn-warning btn-sm">Выйти</a>
+  </div>
+
+  <!-- Создание автора -->
+  <div class="card mb-4">
+    <h4>Создать контент‑мейкера</h4>
+    <form method="POST" action="/creator/create" class="row g-2 mt-2">
+      <div class="col-md-3"><input name="nickname" class="form-control" placeholder="Ник" required></div>
+      <div class="col-md-3"><input name="yt_url" class="form-control" placeholder="YouTube URL"></div>
+      <div class="col-md-3"><input name="tt_url" class="form-control" placeholder="TikTok URL"></div>
+      <div class="col-md-3"><input name="ig_url" class="form-control" placeholder="Instagram URL"></div>
+      <div class="col-md-2"><input name="commission_percent" type="number" class="form-control" placeholder="% комиссии" value="10"></div>
+      <div class="col-md-6"><input name="note" class="form-control" placeholder="Заметка"></div>
+      <div class="col-md-2"><button class="btn btn-light w-100">Создать</button></div>
+    </form>
+  </div>
+
+  <!-- Создание промокода -->
+  <div class="card mb-4">
+    <h4>Создать промокод</h4>
+    <form method="POST" action="/promo/create" class="row g-2 mt-2">
+      <div class="col-md-3"><input name="code" class="form-control" placeholder="Промокод" required></div>
+      <div class="col-md-3">
+        <select name="creator_id" class="form-control">
+          <option value="">— без автора —</option>
+          {% for c in creators %}
+            <option value="{{ c.id }}">{{ c.nickname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><input name="bonus_days" type="number" class="form-control" value="7" placeholder="+ дней"></div>
+      <div class="col-md-2"><input name="max_uses" type="number" class="form-control" value="0" placeholder="Лимит (0 — нет)"></div>
+      <div class="col-md-3"><input name="end_at" class="form-control" placeholder="Окончание (YYYY-MM-DD HH:MM)"></div>
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="only_new_users" id="onlyNew">
+          <label class="form-check-label" for="onlyNew">Только для новых</label>
+        </div>
+      </div>
+      <div class="col-md-6"><input name="note" class="form-control" placeholder="Описание/заметка"></div>
+      <div class="col-md-2"><button class="btn btn-light w-100">Создать</button></div>
+    </form>
+  </div>
+
+  <!-- Список промокодов -->
+  <div class="card mb-4">
+    <h4>Список промокодов</h4>
+    <table class="table table-dark table-striped mt-3">
+      <thead>
+        <tr>
+          <th>ID</th><th>Код</th><th>Автор</th><th>Бонус</th><th>Лимит</th><th>Срок</th><th>Активен</th><th>Исп.</th><th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in codes %}
+        <tr>
+          <td>{{ p.id }}</td>
+          <td>{{ p.code }}</td>
+          <td>{{ p.creator_nickname or '—' }}</td>
+          <td>{{ p.bonus_days }} дн.</td>
+          <td>{{ p.max_uses or '∞' }}</td>
+          <td>
+            {{ p.start_at|format_datetime }} —
+            {% if p.end_at %}{{ p.end_at|format_datetime }}{% else %}∞{% endif %}
+          </td>
+          <td>{{ 'Да' if p.active else 'Нет' }}</td>
+          <td>{{ stats.get(p.code, 0) }}</td>
+          <td>
+            <a href="{{ url_for('promo_toggle', code=p.code) }}" class="btn btn-warning btn-sm">⛔/✅</a>
+            <form method="POST" action="{{ url_for('promo_delete', code=p.code) }}" style="display:inline;">
+              <button class="btn btn-danger btn-sm" onclick="return confirm('Удалить {{ p.code }}?');">🗑</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Ручной учёт покупок -->
+  <div class="card mb-4">
+    <h4>Добавить покупку (для комиссий)</h4>
+    <form method="POST" action="/purchase/create" class="row g-2 mt-2">
+      <div class="col-md-3"><input name="key" class="form-control" placeholder="Лицензия KEY" required></div>
+      <div class="col-md-2"><input name="amount" type="number" step="0.01" class="form-control" placeholder="Сумма" required></div>
+      <div class="col-md-3"><input name="code" class="form-control" placeholder="Промокод (опц.)"></div>
+      <div class="col-md-2"><button class="btn btn-light w-100">Добавить</button></div>
+    </form>
+  </div>
+</div>
+</body>
+</html>
