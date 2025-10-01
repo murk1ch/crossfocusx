@@ -336,6 +336,20 @@ def creator_create():
             """, (nickname, yt_url, tt_url, ig_url, commission_percent, note))
             conn.commit()
     return redirect(url_for("referrals"))
+    
+@app.route("/promo/redeem", methods=["POST"])
+def promo_redeem():
+    data = request.get_json()
+    key = data.get("key")
+    hwid = data.get("hwid")
+    promo = data.get("promo")
+
+    # здесь твоя логика проверки промокода
+    return jsonify({
+        "success": True,
+        "bonus_days": 7,
+        "message": "Промокод применён, +7 дней!"
+    })
 
 @app.route("/creator/toggle/<int:creator_id>")
 def creator_toggle(creator_id):
@@ -513,6 +527,7 @@ def purchase_create():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
