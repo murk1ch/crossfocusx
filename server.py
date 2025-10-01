@@ -261,6 +261,7 @@ def check_key():
                 "hours_left": hours_left
             })
 
+# ---------------- РОУТ: referrals ----------------
 @app.route("/referrals")
 def referrals():
     if not require_admin():
@@ -268,11 +269,11 @@ def referrals():
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # 1. Контент‑мейкеры
+            # Контент‑мейкеры
             cur.execute("SELECT * FROM creators ORDER BY id DESC")
             creators = cur.fetchall()
 
-            # 2. Промокоды + ник автора
+            # Промокоды + ник автора
             cur.execute("""
                 SELECT p.*, c.nickname AS creator_nickname
                 FROM promo_codes p
@@ -281,7 +282,7 @@ def referrals():
             """)
             codes = cur.fetchall()
 
-            # 3. Статистика по использованию промокодов
+            # Статистика по промокодам
             cur.execute("""
                 SELECT code, COUNT(*) AS uses
                 FROM promo_redemptions
@@ -289,7 +290,17 @@ def referrals():
             """)
             stats = {row["code"]: row["uses"] for row in cur.fetchall()}
 
-            # 4. История применений (последние 50)
+            # Статистика по авторам
+            cur.execute("""
+                SELECT c.id, COUNT(r.id) AS uses
+                FROM creators c
+                LEFT JOIN promo_codes p ON p.creator_id = c.id
+                LEFT JOIN promo_redemptions r ON r.code = p.code
+                GROUP BY c.id
+            """)
+            creator_stats = {row["id"]: row["uses"] for row in cur.fetchall()}
+
+            # История применений
             cur.execute("""
                 SELECT * FROM promo_redemptions
                 ORDER BY redeemed_at DESC
@@ -302,55 +313,72 @@ def referrals():
         creators=creators,
         codes=codes,
         stats=stats,
+        creator_stats=creator_stats,
         redemptions=redemptions
     )
 
+# ---------------- Управление авторами ----------------
 @app.route("/creator/create", methods=["POST"])
 def creator_create():
     if not require_admin():
         return redirect(url_for("login"))
-    nickname = (request.form.get("nickname") or "").strip()
-    yt_url = (request.form.get("yt_url") or "").strip()
-    tt_url = (request.form.get("tt_url") or "").strip()
-    ig_url = (request.form.get("ig_url") or "").strip()
-    commission = int(request.form.get("commission_percent") or 10)
-    note = (request.form.get("note") or "").strip()
-    if not nickname:
-        return redirect(url_for("referrals"))
+    nickname = request.form["nickname"]
+    yt_url = request.form.get("yt_url")
+    tt_url = request.form.get("tt_url")
+    ig_url = request.form.get("ig_url")
+    commission_percent = request.form.get("commission_percent", 10)
+    note = request.form.get("note")
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO creators (nickname, yt_url, tt_url, ig_url, commission_percent, note)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (nickname) DO NOTHING
-            """, (nickname, yt_url, tt_url, ig_url, commission, note))
+                INSERT INTO creators (nickname, yt_url, tt_url, ig_url, commission_percent, note, active)
+                VALUES (%s,%s,%s,%s,%s,%s,TRUE)
+            """, (nickname, yt_url, tt_url, ig_url, commission_percent, note))
             conn.commit()
     return redirect(url_for("referrals"))
 
+@app.route("/creator/toggle/<int:creator_id>")
+def creator_toggle(creator_id):
+    if not require_admin():
+        return redirect(url_for("login"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE creators SET active = NOT active WHERE id=%s", (creator_id,))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+@app.route("/creator/delete/<int:creator_id>", methods=["POST"])
+def creator_delete(creator_id):
+    if not require_admin():
+        return redirect(url_for("login"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM creators WHERE id=%s", (creator_id,))
+            conn.commit()
+    return redirect(url_for("referrals"))
+
+# ---------------- Управление промокодами ----------------
 @app.route("/promo/create", methods=["POST"])
 def promo_create():
     if not require_admin():
         return redirect(url_for("login"))
-    code = (request.form.get("code") or "").strip().upper()
-    creator_id = int(request.form.get("creator_id") or 0)
-    bonus_days = int(request.form.get("bonus_days") or 7)
-    max_uses = int(request.form.get("max_uses") or 0)
-    end_at_raw = (request.form.get("end_at") or "").strip()
-    end_at = datetime.strptime(end_at_raw, "%Y-%m-%d %H:%M") if end_at_raw else None
-    only_new = (request.form.get("only_new_users") == "on")
-    note = (request.form.get("note") or "").strip()
-    if not code:
-        return redirect(url_for("referrals"))
+    code = request.form["code"]
+    creator_id = request.form.get("creator_id") or None
+    bonus_days = request.form.get("bonus_days", 7)
+    max_uses = request.form.get("max_uses", 0)
+    end_at = request.form.get("end_at") or None
+    only_new = "only_new_users" in request.form
+    note = request.form.get("note")
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO promo_codes (code, creator_id, bonus_days, max_uses, active, start_at, end_at, only_new_users, note)
-                VALUES (%s, %s, %s, %s, TRUE, NOW(), %s, %s, %s)
-            """, (code, creator_id or None, bonus_days, max_uses, end_at, only_new, note))
+                INSERT INTO promo_codes (code, creator_id, bonus_days, max_uses, end_at, only_new_users, note, active, start_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,TRUE,NOW())
+            """, (code, creator_id, bonus_days, max_uses, end_at, only_new, note))
             conn.commit()
     return redirect(url_for("referrals"))
 
-@app.route("/promo/toggle/<path:code>")
+@app.route("/promo/toggle/<code>")
 def promo_toggle(code):
     if not require_admin():
         return redirect(url_for("login"))
@@ -360,7 +388,7 @@ def promo_toggle(code):
             conn.commit()
     return redirect(url_for("referrals"))
 
-@app.route("/promo/delete/<path:code>", methods=["POST"])
+@app.route("/promo/delete/<code>", methods=["POST"])
 def promo_delete(code):
     if not require_admin():
         return redirect(url_for("login"))
