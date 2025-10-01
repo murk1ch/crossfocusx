@@ -43,7 +43,16 @@
     <table class="table table-dark table-striped mt-3">
       <thead>
         <tr>
-          <th>ID</th><th>Ник</th><th>YouTube</th><th>TikTok</th><th>Instagram</th><th>% комиссии</th><th>Заметка</th>
+          <th>ID</th>
+          <th>Ник</th>
+          <th>YouTube</th>
+          <th>TikTok</th>
+          <th>Instagram</th>
+          <th>% комиссии</th>
+          <th>Заметка</th>
+          <th>Активен</th>
+          <th>Исп.</th>
+          <th>Действия</th>
         </tr>
       </thead>
       <tbody>
@@ -56,6 +65,14 @@
           <td>{% if c.ig_url %}<a href="{{ c.ig_url }}" target="_blank">Instagram</a>{% endif %}</td>
           <td>{{ c.commission_percent }}%</td>
           <td>{{ c.note }}</td>
+          <td>{{ 'Да' if c.active else 'Нет' }}</td>
+          <td>{{ creator_stats.get(c.id, 0) }}</td>
+          <td>
+            <a href="{{ url_for('creator_toggle', creator_id=c.id) }}" class="btn btn-warning btn-sm">⛔/✅</a>
+            <form method="POST" action="{{ url_for('creator_delete', creator_id=c.id) }}" style="display:inline;">
+              <button class="btn btn-danger btn-sm" onclick="return confirm('Удалить {{ c.nickname }}?');">🗑</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
