@@ -265,10 +265,14 @@ def check_key():
 def referrals():
     if not require_admin():
         return redirect(url_for("login"))
+
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # 1. Контент‑мейкеры
             cur.execute("SELECT * FROM creators ORDER BY id DESC")
             creators = cur.fetchall()
+
+            # 2. Промокоды + ник автора
             cur.execute("""
                 SELECT p.*, c.nickname AS creator_nickname
                 FROM promo_codes p
@@ -276,13 +280,30 @@ def referrals():
                 ORDER BY p.id DESC
             """)
             codes = cur.fetchall()
+
+            # 3. Статистика по использованию промокодов
             cur.execute("""
                 SELECT code, COUNT(*) AS uses
                 FROM promo_redemptions
                 GROUP BY code
             """)
             stats = {row["code"]: row["uses"] for row in cur.fetchall()}
-    return render_template("referrals.html", creators=creators, codes=codes, stats=stats)
+
+            # 4. История применений (последние 50)
+            cur.execute("""
+                SELECT * FROM promo_redemptions
+                ORDER BY redeemed_at DESC
+                LIMIT 50
+            """)
+            redemptions = cur.fetchall()
+
+    return render_template(
+        "referrals.html",
+        creators=creators,
+        codes=codes,
+        stats=stats,
+        redemptions=redemptions
+    )
 
 @app.route("/creator/create", methods=["POST"])
 def creator_create():
@@ -464,6 +485,7 @@ def purchase_create():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
